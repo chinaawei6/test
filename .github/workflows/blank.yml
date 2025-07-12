@@ -17,7 +17,7 @@ jobs:
     - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
     - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
     - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "9xprZ5KW*0!WK3(le=!DEdJPJrXc)F3X" -Force) 
-    - run: Set-WinUserLanguageList -LanguageList 'zh_CN','en_US' -Force
+    - run: Set-WinUserLanguageList -LanguageList 'zh_CN' -Force
     
     - name: test
       run: |
