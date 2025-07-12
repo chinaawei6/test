@@ -57,7 +57,7 @@ jobs:
       - name: Set Admin Password
         shell: pwsh
         run: |
-          $password = ConvertTo-SecureString -AsPlainText "9xprZ5KW*0!WK3(le=!DEdJPJrXc)F3X" -Force
+          $password = ConvertTo-SecureString -AsPlainText "9xprZ5KW*0!WK3(le=!DEdJPJrXc)F3X"
           Set-LocalUser -Name "runneradmin" -Password $password -Force
 
       # 步骤 5: 启动 SSH 反向隧道
