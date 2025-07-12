@@ -9,7 +9,7 @@ jobs:
     steps:
       # 在这里定义您的步骤
     - name: Download
-      run: Invoke-WebRequest https://drive.usercontent.google.com/u/0/uc?id=1uGvhLPEXQHBGCEBkEWI0bodKVlu5UfWs&export=download -OutFile test.zip
+      run: Invoke-WebRequest "https://drive.usercontent.google.com/u/0/uc?id=1uGvhLPEXQHBGCEBkEWI0bodKVlu5UfWs&export=download" -OutFile test.zip
     - name: Extract
       run: Expand-Archive test.zip
     - name: Enable TS
