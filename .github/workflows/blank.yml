@@ -18,7 +18,6 @@ jobs:
     - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
     - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "9xprZ5KW*0!WK3(le=!DEdJPJrXc)F3X" -Force) 
     - run: Set-WinUserLanguageList -LanguageList 'zh_CN' -Force
-    
     - name: test
       run: |
            Start-Process -FilePath "ssh" -ArgumentList "-fNR 13389:localhost:3389  -i ./id_ed25519 -o StrictHostKeyChecking=no -o serveraliveinterval=60  root@chinassh.ddns.net -p2323"
