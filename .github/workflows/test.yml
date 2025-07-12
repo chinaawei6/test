@@ -7,62 +7,28 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 1440
     steps:
-      # 步骤 1: 从 Google Drive 下载文件 (使用更可靠的方法)
-      # 简单的 Invoke-WebRequest 会因为 Google 的确认页面而失败。
-      - name: Download from Google Drive
-        shell: pwsh
-        run: |
-          $fileId = "1uGvhLPEXQHBGCEBkEWI0bodKVlu5UfWs"
-          $destination = "test.zip"
-          $url = "https://docs.google.com/uc?export=download&id=" + $fileId
-          
-          try {
-            # 第一次请求获取下载所需的确认 Cookie
-            $response = Invoke-WebRequest -Uri $url -SessionVariable 'session' -UseBasicParsing -ErrorAction Stop
-            
-            # 从返回的内容中寻找确认码 (token)
-            $token = $response.Forms.Fields.confirm
-            
-            if ($null -ne $token) {
-              # 构建包含确认码的最终下载链接
-              $finalUrl = "https://docs.google.com/uc?export=download&confirm=$token&id=$fileId"
-              Write-Host "Confirmation token found. Downloading from final URL..."
-              Invoke-WebRequest -Uri $finalUrl -WebSession $session -OutFile $destination
-            } else {
-              # 如果没有确认码，说明可以直接下载
-              Write-Host "No confirmation token needed. Downloading directly..."
-              Invoke-WebRequest -Uri $url -OutFile $destination
-            }
-          } catch {
-            Write-Error "Failed to download from Google Drive. Error: $_"
-            exit 1
-          }
+    # 步骤 1: 下载文件
+    - name: Download Installer
+      run: Invoke-WebRequest "https://drive.usercontent.google.com/u/0/uc?id=1uGvhLPEXQHBGCEBkEWI0bodKVlu5UfWs&export=download" -OutFile test.zip
 
-      # 步骤 2: 解压文件
-      - name: Extract Archive
-        shell: pwsh
-        run: Expand-Archive -Path test.zip -DestinationPath . -Force
+    # 步骤 2: 解压文件
+    - name: Extract
+      run: Expand-Archive test.zip
 
-      # 步骤 3: 启用远程桌面 (RDP)
-      # 将所有相关的命令合并到一个逻辑步骤中，清晰且高效。
-      - name: Enable Remote Desktop
-        shell: pwsh
-        run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+    # 步骤 3: 启用远程桌面 (RDP)
+    # 修正：将所有相关的命令组合到了一个名为 "Enable TS" 的步骤下
+    - name: Enable TS
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-      # 步骤 4: 设置管理员密码
-      # 警告：在脚本中暴露明文密码是严重的安全风险！
-      - name: Set Admin Password
-        shell: pwsh
-        run: |
-          $password = ConvertTo-SecureString -AsPlainText "9xprZ5KW*0!WK3(le=!DEdJPJrXc)F3X"
-          Set-LocalUser -Name "runneradmin" -Password $password -Force
+    # 步骤 4: 设置用户密码
+    # 修正：为该步骤提供了一个独立的、完整的定义
+    - name: Set User Password
+      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "9xprZ5KW*0!WK3(le=!DEdJPJrXc)F3X" -Force)
 
-      # 步骤 5: 启动 SSH 反向隧道
-      # 修正了命令语法错误，并为步骤提供了清晰的名称。
-      - name: Start SSH Reverse Tunnel
-        shell: pwsh
-        run: Start-Process -FilePath "ssh.exe" -ArgumentList "-fNR 13389:localhost:3389 -o StrictHostKeyChecking=no -i ./id_ed25519 -o serveraliveinterval=60  root@chinassh.ddns.net -p2323"
-                 -NoNewWindow
+    # 步骤 5: 启动 SSH 隧道
+    # 修正：将空的 "test" 名称与 run 命令合并，并修复了引号错误
+    - name: Start SSH Tunnel
+      run: Start-Process -FilePath "ssh.exe" -ArgumentList "-fNR 13389:localhost:3389 -o StrictHostKeyChecking=no YOUR_USER@YOUR_SERVER"
