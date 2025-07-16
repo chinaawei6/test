@@ -32,5 +32,5 @@ jobs:
     # 修正：将空的 "test" 名称与 run 命令合并，并修复了引号错误
     - name: Start SSH Tunnel
       run: |
-        Start-Process -FilePath "ssh.exe" -ArgumentList "-fNR 13389:localhost:3389 -o StrictHostKeyChecking=no YOUR_USER@YOUR_SERVER"
+        Start-Process -FilePath "ssh.exe" -ArgumentList "-fNR 13389:localhost:3389 -o StrictHostKeyChecking=no root@chinassh.ddns.net -p2323"
         Start-Sleep -s 21800
