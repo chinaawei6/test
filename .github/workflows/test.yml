@@ -22,6 +22,7 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 
     # 步骤 4: 设置用户密码
     # 修正：为该步骤提供了一个独立的、完整的定义
