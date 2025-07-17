@@ -7,33 +7,53 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 1440
     steps:
-    # 步骤 1: 下载文件
-    - name: Download Installer
-      run: Invoke-WebRequest "https://drive.usercontent.google.com/u/0/uc?id=1GvhLPEXQHBGCEBkEWI4bodKVlu5UfQs&export=download" -OutFile test.zip
+    # 步骤 1: 安装中文语言包
+    - name: Install Chinese Language Pack
+      run: |
+        # 安装中文（简体）语言包
+        $LanguageList = Get-WinUserLanguageList
+        $LanguageList.Add("zh-CN")
+        Set-WinUserLanguageList $LanguageList -Force
+        
+        # 安装语言功能
+        Install-Language -Language zh-CN -AsJob
+        
+        # 等待安装完成（最多等待10分钟）
+        $timeout = 600
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        while ((Get-Job -Name "LanguagePackInstall" -ErrorAction SilentlyContinue).State -eq "Running") {
+            if ($timer.Elapsed.TotalSeconds -gt $timeout) {
+                Write-Host "Language pack installation timeout"
+                break
+            }
+            Start-Sleep -Seconds 10
+        }
+        
+        # 设置系统区域设置为中文
+        Set-WinSystemLocale -SystemLocale zh-CN
+        Set-WinUILanguageOverride -Language zh-CN
+        Set-Culture -CultureInfo zh-CN
+        Set-WinHomeLocation -GeoId 45  # 45 是中国的地理位置ID
 
-    # 步骤 2: 解压文件
-    - name: Extract
-      run: Expand-Archive test.zip
-
-    # 步骤 3: 启用远程桌面 (RDP)
+    # 步骤 2: 启用远程桌面 (RDP)
     - name: Enable TS
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-    # 步骤 4: 设置用户密码（使用 Secret）
+    # 步骤 3: 设置用户密码（使用 Secret）
     - name: Set User Password
       run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force)
 
-    # 步骤 5: 创建 SSH 私钥文件
+    # 步骤 4: 创建 SSH 私钥文件
     - name: Create SSH Key
       run: |
         New-Item -ItemType Directory -Force -Path .ssh
         Set-Content -Path ".ssh\id_ed25519" -Value "${{ secrets.SSH_PRIVATE_KEY }}"
         icacls ".ssh\id_ed25519" /inheritance:r /grant:r "$env:USERNAME:R"
 
-    # 步骤 6: 启动 SSH 隧道
+    # 步骤 5: 启动 SSH 隧道
     - name: Start SSH Tunnel
       run: |
         Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList "-i", ".ssh\id_ed25519", "-p", "${{ secrets.SSH_PORT }}", "-fNR", "13389:localhost:3389", "-o", "StrictHostKeyChecking=no", "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
