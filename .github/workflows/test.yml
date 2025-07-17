@@ -22,7 +22,6 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 
     # 步骤 4: 设置用户密码
     # 修正：为该步骤提供了一个独立的、完整的定义
@@ -33,5 +32,6 @@ jobs:
     # 修正：将空的 "test" 名称与 run 命令合并，并修复了引号错误
     - name: Start SSH Tunnel
       run: |
+        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
         Start-Process -FilePath "ssh.exe" -ArgumentList "-i id_ed25519 -fNR 13389:localhost:3389 -o StrictHostKeyChecking=no root@35.236.182.160 -p6000"
         Start-Sleep -s 21800
