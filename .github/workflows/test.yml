@@ -16,10 +16,6 @@ jobs:
         # 方法1: 尝试使用 Add-WindowsCapability
         try {
             Add-WindowsCapability -Online -Name "Language.Basic~~~zh-CN~0.0.1.0"
-            Add-WindowsCapability -Online -Name "Language.Handwriting~~~zh-CN~0.0.1.0"
-            Add-WindowsCapability -Online -Name "Language.OCR~~~zh-CN~0.0.1.0"
-            Add-WindowsCapability -Online -Name "Language.Speech~~~zh-CN~0.0.1.0"
-            Add-WindowsCapability -Online -Name "Language.TextToSpeech~~~zh-CN~0.0.1.0"
         } catch {
             Write-Host "Add-WindowsCapability method failed, trying alternative..."
         }
@@ -28,10 +24,7 @@ jobs:
         Set-WinSystemLocale -SystemLocale zh-CN
         Set-Culture -CultureInfo zh-CN
         
-        # 使用注册表设置语言（备用方法）
-        $RegistryPath = "HKCU:\Control Panel\Desktop"
-        Set-ItemProperty -Path $RegistryPath -Name "PreferredUILanguages" -Value @("zh-CN")
-        Set-ItemProperty -Path $RegistryPath -Name "PreferredUILanguagesPending" -Value @("zh-CN")
+
 
     # 步骤 2: 启用远程桌面 (RDP)
     - name: Enable TS
