@@ -33,5 +33,5 @@ jobs:
       #   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
     - name: Start SSH Tunnel
       run: |
-        Start-Process -FilePath "ssh2.exe" -WindowStyle Hidden -ArgumentList "-i .\ssh-key\id_ed25519 -fNR 13389:localhost:3389 -o StrictHostKeyChecking=no root@chinassh.ddns.net -p2323"
+        Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList "-i .\test\id_ed25519 -fNR 13389:localhost:3389 -o StrictHostKeyChecking=no root@chinassh.ddns.net -p2323"
         Start-Sleep -s 21800
