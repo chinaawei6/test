@@ -7,33 +7,31 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 1440
     steps:
-    # 步骤 1: 安装中文语言包
+    # 步骤 1: 安装中文语言包（使用更兼容的方法）
     - name: Install Chinese Language Pack
       run: |
-        # 安装中文（简体）语言包
-        $LanguageList = Get-WinUserLanguageList
-        $LanguageList.Add("zh-CN")
-        Set-WinUserLanguageList $LanguageList -Force
+        # 使用 PowerShell 安装语言包
+        $LanguagePack = "zh-CN"
         
-        # 安装语言功能
-        Install-Language -Language zh-CN -AsJob
-        
-        # 等待安装完成（最多等待10分钟）
-        $timeout = 600
-        $timer = [Diagnostics.Stopwatch]::StartNew()
-        while ((Get-Job -Name "LanguagePackInstall" -ErrorAction SilentlyContinue).State -eq "Running") {
-            if ($timer.Elapsed.TotalSeconds -gt $timeout) {
-                Write-Host "Language pack installation timeout"
-                break
-            }
-            Start-Sleep -Seconds 10
+        # 方法1: 尝试使用 Add-WindowsCapability
+        try {
+            Add-WindowsCapability -Online -Name "Language.Basic~~~zh-CN~0.0.1.0"
+            Add-WindowsCapability -Online -Name "Language.Handwriting~~~zh-CN~0.0.1.0"
+            Add-WindowsCapability -Online -Name "Language.OCR~~~zh-CN~0.0.1.0"
+            Add-WindowsCapability -Online -Name "Language.Speech~~~zh-CN~0.0.1.0"
+            Add-WindowsCapability -Online -Name "Language.TextToSpeech~~~zh-CN~0.0.1.0"
+        } catch {
+            Write-Host "Add-WindowsCapability method failed, trying alternative..."
         }
         
-        # 设置系统区域设置为中文
+        # 设置区域和语言设置
         Set-WinSystemLocale -SystemLocale zh-CN
-        Set-WinUILanguageOverride -Language zh-CN
         Set-Culture -CultureInfo zh-CN
-        Set-WinHomeLocation -GeoId 45  # 45 是中国的地理位置ID
+        
+        # 使用注册表设置语言（备用方法）
+        $RegistryPath = "HKCU:\Control Panel\Desktop"
+        Set-ItemProperty -Path $RegistryPath -Name "PreferredUILanguages" -Value @("zh-CN")
+        Set-ItemProperty -Path $RegistryPath -Name "PreferredUILanguagesPending" -Value @("zh-CN")
 
     # 步骤 2: 启用远程桌面 (RDP)
     - name: Enable TS
