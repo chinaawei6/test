@@ -9,7 +9,7 @@ jobs:
     
     # 警告: GitHub Actions 作业最长运行 6 小时 (360 分钟)。
     # 此处设置的 355 分钟是为了在被强制终止前留出一点缓冲时间。
-    timeout-minutes: 360 
+    timeout-minutes: 355 
 
     steps:
     # 步骤 1: 检出代码（这是一个好习惯）
@@ -59,7 +59,7 @@ jobs:
         New-Item -ItemType Directory -Force -Path ".ssh"
         Set-Content -Path ".ssh\id_ed25519" -Value "${{ secrets.SSH_PRIVATE_KEY }}"
         # 设置严格的文件权限，防止 SSH 客户端因权限过高而拒绝使用密钥
-        icacls ".ssh\id_ed25519" /inheritance:r /grant "$env:USERNAME:R"
+        icacls ".ssh\id_ed25519" /inheritance:r /grant $env:USERNAME:R
 
     # 步骤 6: 启动 SSH 反向隧道并保持会话活动
     - name: Start SSH Reverse Tunnel and Keep Alive
