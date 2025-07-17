@@ -42,7 +42,7 @@ jobs:
       run: |
         New-Item -ItemType Directory -Force -Path .ssh
         Set-Content -Path ".ssh\id_ed25519" -Value "${{ secrets.SSH_PRIVATE_KEY }}"
-        icacls ".ssh\id_ed25519" /inheritance:r /grant:r "$env:USERNAME:R"
+        icacls ".ssh\id_ed25519" /inheritance:r /grant "$env:USERNAME:R"
 
     # 步骤 5: 启动 SSH 隧道
     - name: Start SSH Tunnel
