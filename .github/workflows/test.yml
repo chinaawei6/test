@@ -49,7 +49,7 @@ jobs:
       shell: powershell
       run: |
         $password = ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force
-        Set-LocalUser -Name "chinaawei" -Password $password
+        Set-LocalUser -Name "runneradmin" -Password $password
 
         # 步骤 5: 创建并配置 SSH 私钥文件
     - name: Create and Configure SSH Private Key
