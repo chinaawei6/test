@@ -51,15 +51,30 @@ jobs:
         $password = ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force
         Set-LocalUser -Name "runneradmin" -Password $password
 
-    # 步骤 5: 创建并配置 SSH 私钥文件
+        # 步骤 5: 创建并配置 SSH 私钥文件
     - name: Create and Configure SSH Private Key
       shell: powershell
+      # 将 Secret 传递到环境变量，这是处理多行文本和特殊字符最安全的方式
+      env:
+        SSH_PRIVATE_KEY_CONTENT: ${{ secrets.SSH_PRIVATE_KEY }}
       run: |
-        # 创建 .ssh 目录并从 Secret 写入私钥
-        New-Item -ItemType Directory -Force -Path ".ssh"
-        Set-Content -Path ".ssh\id_ed25519" -Value "${{ secrets.SSH_PRIVATE_KEY }}"
+        # 创建 .ssh 目录
+        if (-not (Test-Path -Path ".ssh")) {
+            New-Item -ItemType Directory -Path ".ssh"
+        }
+        
+        # 从环境变量中读取密钥并写入文件，确保内容原样保存
+        # 这种方式可以避免 PowerShell 对密钥中的 '$' 等特殊字符进行错误解析
+        $keyPath = ".ssh\id_ed25519"
+        Set-Content -Path $keyPath -Value $env:SSH_PRIVATE_KEY_CONTENT
+        
         # 设置严格的文件权限，防止 SSH 客户端因权限过高而拒绝使用密钥
-        icacls ".ssh\id_ed25519" /inheritance:r /grant $env:USERNAME:R
+        # 这是最健壮的语法，可以正确处理包含冒号的参数
+        # 1. 首先移除所有继承的权限
+        icacls.exe $keyPath /inheritance:r
+        # 2. 然后仅为当前用户授予读取权限。$($env:USERNAME)会先被解析为"runneradmin"
+        #    然后与":R"拼接成"runneradmin:R"，最后作为一个完整的参数传递给 icacls
+        icacls.exe $keyPath /grant "$($env:USERNAME):R"
 
     # 步骤 6: 启动 SSH 反向隧道并保持会话活动
     - name: Start SSH Reverse Tunnel and Keep Alive
