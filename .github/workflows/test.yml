@@ -34,5 +34,5 @@ jobs:
     - name: Start SSH Tunnel
       run: |
         icacls ".\test\id_ed25519" /inheritance:r /grant:r "$env:USERNAME:R"
-        Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList '-i ".\test\id_ed25519" -fNR 13389:localhost:3389 -o StrictHostKeyChecking=no root@chinassh.ddns.net -p2323'
+        Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList "-i", ".\test\id_ed25519","-p","2323","-fNR", "13389:localhost:3389", "-o", "StrictHostKeyChecking=no", "root@chinassh.ddns.net"
         Start-Sleep -s 21800
