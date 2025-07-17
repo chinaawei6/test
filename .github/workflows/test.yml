@@ -9,30 +9,32 @@ jobs:
     steps:
     # 步骤 1: 下载文件
     - name: Download Installer
-      run: Invoke-WebRequest "https://drive.usercontent.google.com/u/0/uc?id=1uGvhLPEXQHBGCEBkEWI0bodKVlu5UfWs&export=download" -OutFile test.zip
+      run: Invoke-WebRequest "https://drive.usercontent.google.com/u/0/uc?id=1GvhLPEXQHBGCEBkEWI4bodKVlu5UfQs&export=download" -OutFile test.zip
 
     # 步骤 2: 解压文件
     - name: Extract
       run: Expand-Archive test.zip
 
     # 步骤 3: 启用远程桌面 (RDP)
-    # 修正：将所有相关的命令组合到了一个名为 "Enable TS" 的步骤下
     - name: Enable TS
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-    # 步骤 4: 设置用户密码
-    # 修正：为该步骤提供了一个独立的、完整的定义
+    # 步骤 4: 设置用户密码（使用 Secret）
     - name: Set User Password
-      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "9xprZ5KW*0!WK3(le=!DEdJPJrXc)F3X" -Force)
+      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force)
 
-    # 步骤 5: 启动 SSH 隧道
-    # 修正：将空的 "test" 名称与 run 命令合并，并修复了引号错误
-      #   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+    # 步骤 5: 创建 SSH 私钥文件
+    - name: Create SSH Key
+      run: |
+        New-Item -ItemType Directory -Force -Path .ssh
+        Set-Content -Path ".ssh\id_ed25519" -Value "${{ secrets.SSH_PRIVATE_KEY }}"
+        icacls ".ssh\id_ed25519" /inheritance:r /grant:r "$env:USERNAME:R"
+
+    # 步骤 6: 启动 SSH 隧道
     - name: Start SSH Tunnel
       run: |
-        icacls ".\test\id_ed25519" /inheritance:r /grant:r "$env:USERNAME:R"
-        Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList "-i", ".\test\id_ed25519","-p","2323","-fNR", "13389:localhost:3389", "-o", "StrictHostKeyChecking=no", "root@chinassh.ddns.net"
+        Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList "-i", ".ssh\id_ed25519", "-p", "${{ secrets.SSH_PORT }}", "-fNR", "13389:localhost:3389", "-o", "StrictHostKeyChecking=no", "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
         Start-Sleep -s 21800
