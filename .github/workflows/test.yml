@@ -1,51 +1,89 @@
 name: test
 
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 1440
+    
+    # 警告: GitHub Actions 作业最长运行 6 小时 (360 分钟)。
+    # 此处设置的 355 分钟是为了在被强制终止前留出一点缓冲时间。
+    timeout-minutes: 360 
+
     steps:
-    # 步骤 1: 安装中文语言包（使用更兼容的方法）
-    - name: Install Chinese Language Pack
+    # 步骤 1: 检出代码（这是一个好习惯）
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 步骤 2: 安装完整的中文语言包
+    - name: Install Full Chinese (zh-CN) Language Pack
+      shell: powershell
       run: |
-        # 使用 PowerShell 安装语言包
-        $LanguagePack = "zh-CN"
+        # 这个方法更健壮，会自动安装所有相关的中文组件（基础、手写、OCR等）
+        Write-Host "Installing full Chinese language pack components..."
+        Get-WindowsCapability -Online | Where-Object { $_.Name -like 'Language.*.zh-CN*' } | Add-WindowsCapability -Online
         
-        # 方法1: 尝试使用 Add-WindowsCapability
-        try {
-            Add-WindowsCapability -Online -Name "Language.Basic~~~zh-CN~0.0.1.0"
-        } catch {
-            Write-Host "Add-WindowsCapability method failed, trying alternative..."
-        }
-        
-        # 设置区域和语言设置
+        # 设置系统和用户区域
+        Write-Host "Setting system locale and user culture to zh-CN..."
         Set-WinSystemLocale -SystemLocale zh-CN
+        Set-WinUserLanguageList -LanguageList zh-CN -Force
         Set-Culture -CultureInfo zh-CN
         
+        # 验证当前会话的区域设置
+        Get-Culture
 
-
-    # 步骤 2: 启用远程桌面 (RDP)
-    - name: Enable TS
+    # 步骤 3: 启用远程桌面 (RDP) 并配置防火墙
+    - name: Enable Remote Desktop
+      shell: powershell
       run: |
+        # 允许远程连接
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        # 在 Windows 防火墙中启用"远程桌面"规则组
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        # 启用网络级别身份验证 (NLA)，更安全
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-    # 步骤 3: 设置用户密码（使用 Secret）
-    - name: Set User Password
-      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force)
-
-    # 步骤 4: 创建 SSH 私钥文件
-    - name: Create SSH Key
+    # 步骤 4: 从 Secrets 安全地设置用户密码
+    - name: Set RDP User Password
+      shell: powershell
       run: |
-        New-Item -ItemType Directory -Force -Path .ssh
+        $password = ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force
+        Set-LocalUser -Name "runneradmin" -Password $password
+
+    # 步骤 5: 创建并配置 SSH 私钥文件
+    - name: Create and Configure SSH Private Key
+      shell: powershell
+      run: |
+        # 创建 .ssh 目录并从 Secret 写入私钥
+        New-Item -ItemType Directory -Force -Path ".ssh"
         Set-Content -Path ".ssh\id_ed25519" -Value "${{ secrets.SSH_PRIVATE_KEY }}"
+        # 设置严格的文件权限，防止 SSH 客户端因权限过高而拒绝使用密钥
         icacls ".ssh\id_ed25519" /inheritance:r /grant "$env:USERNAME:R"
 
-    # 步骤 5: 启动 SSH 隧道
-    - name: Start SSH Tunnel
+    # 步骤 6: 启动 SSH 反向隧道并保持会话活动
+    - name: Start SSH Reverse Tunnel and Keep Alive
+      shell: powershell
       run: |
-        Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList "-i", ".ssh\id_ed25519", "-p", "${{ secrets.SSH_PORT }}", "-fNR", "13389:localhost:3389", "-o", "StrictHostKeyChecking=no", "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
-        Start-Sleep -s 21800
+        Write-Host "Starting SSH reverse tunnel in the background..."
+        # 启动 ssh.exe 作为一个独立的后台进程
+        # -f: 后台执行
+        # -N: 不执行远程命令，仅用于端口转发
+        # -R: 反向隧道。将远程服务器的 13389 端口转发到本地的 3389 (RDP) 端口
+        # -o StrictHostKeyChecking=no: 自动接受主机密钥，避免交互
+        Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList @(
+            "-i", ".ssh\id_ed25519",
+            "-p", "${{ secrets.SSH_PORT }}",
+            "-fNR", "13389:localhost:3389",
+            "-o", "StrictHostKeyChecking=no",
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
+        )
+        
+        Write-Host "Tunnel process started. Keeping the workflow alive for approximately 5 hours and 55 minutes."
+        # 使用一个循环来保持工作流活动，而不是 Start-Sleep，这样日志会持续有输出
+        $runtimeSeconds = 21300 # 约 5h 55m
+        for ($i = 0; $i -lt $runtimeSeconds; $i += 60) {
+            Write-Host "Session active. Uptime: $($i/60) minutes."
+            Start-Sleep -s 60
+        }
+        Write-Host "Nearing maximum runtime. Workflow will now complete."
