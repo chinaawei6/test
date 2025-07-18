@@ -1,70 +1,91 @@
 name: test
+
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 355
+    
+    # 警告: GitHub Actions 作业最长运行 6 小时 (360 分钟)。
+    # 此处设置的 355 分钟是为了在被强制终止前留出一点缓冲时间。
+    timeout-minutes: 355 
 
     steps:
-    # 步骤 1: 检出代码
+    # 步骤 1: 检出代码（这是一个好习惯）
     - name: Checkout Code
       uses: actions/checkout@v4
 
-  
-    - name: Install Chinese Pack and Set as Default
+    # 步骤 2: 安装完整的中文语言包
+    - name: Install Full Chinese (zh-CN) Language Pack
       shell: powershell
       run: |
+        # 这个方法更健壮，会自动安装所有相关的中文组件（基础、手写、OCR等）
         Write-Host "Installing full Chinese language pack components..."
         Get-WindowsCapability -Online | Where-Object { $_.Name -like 'Language.*.zh-CN*' } | Add-WindowsCapability -Online
-        Write-Host "Setting system-wide language settings to zh-CN..."
-        Set-WinSystemLocale zh-CN
-        Set-WinUserLanguageList zh-CN -Force
-        Set-WinUILanguageOverride -Language zh-CN
-        Set-WinHomeLocation -GeoId 45
+        
+        # 设置系统和用户区域
+        Write-Host "Setting system locale and user culture to zh-CN..."
+        Set-WinSystemLocale -SystemLocale zh-CN
+        Set-WinUserLanguageList -LanguageList zh-CN -Force
+        Set-Culture -CultureInfo zh-CN
+        
+        # 验证当前会话的区域设置
+        Get-Culture
 
-    - name: Create New User from Secrets
-      shell: powershell
-      run: |
-        $username = "${{ secrets.RDP_USERNAME }}"
-        $password = ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force
-        
-        
-        if ([string]::IsNullOrWhiteSpace($username)) {
-            Write-Error "RDP_USERNAME secret is not set or empty. Please configure it in your repository secrets."
-            exit 1
-        }
-        
-        Write-Host "Creating new local user: $username"
-        New-LocalUser -Name $username -Password $password -FullName "Dynamic RDP User" -Description "RDP user with Chinese UI created from secrets"
-        
-        Write-Host "Adding $username to Administrators and Remote Desktop Users groups..."
-        Add-LocalGroupMember -Group "Administrators" -Member $username
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username  
-        Write-Host "User '$username' created successfully."
+    # 步骤 3: 启用远程桌面 (RDP) 并配置防火墙
     - name: Enable Remote Desktop
       shell: powershell
       run: |
+        # 允许远程连接
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        # 在 Windows 防火墙中启用"远程桌面"规则组
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        # 启用网络级别身份验证 (NLA)，更安全
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - name: SSH Private Key
+
+    # 步骤 4: 从 Secrets 安全地设置用户密码
+    - name: Set RDP User Password
       shell: powershell
+      run: |
+        $password = ConvertTo-SecureString -AsPlainText "${{ secrets.RDP_PASSWORD }}" -Force
+        Set-LocalUser -Name "runneradmin" -Password $password
+
+        # 步骤 5: 创建并配置 SSH 私钥文件
+    - name: Create and Configure SSH Private Key
+      shell: powershell
+      # 将 Secret 传递到环境变量，这是处理多行文本和特殊字符最安全的方式
       env:
         SSH_PRIVATE_KEY_CONTENT: ${{ secrets.SSH_PRIVATE_KEY }}
       run: |
+        # 创建 .ssh 目录
         if (-not (Test-Path -Path ".ssh")) {
             New-Item -ItemType Directory -Path ".ssh"
         }
+        
+        # 从环境变量中读取密钥并写入文件，确保内容原样保存
+        # 这种方式可以避免 PowerShell 对密钥中的 '$' 等特殊字符进行错误解析
         $keyPath = ".ssh\id_ed25519"
         Set-Content -Path $keyPath -Value $env:SSH_PRIVATE_KEY_CONTENT
+        
+        # 设置严格的文件权限，防止 SSH 客户端因权限过高而拒绝使用密钥
+        # 这是最健壮的语法，可以正确处理包含冒号的参数
+        # 1. 首先移除所有继承的权限
         icacls.exe $keyPath /inheritance:r
+        # 2. 然后仅为当前用户授予读取权限。$($env:USERNAME)会先被解析为"runneradmin"
+        #    然后与":R"拼接成"runneradmin:R"，最后作为一个完整的参数传递给 icacls
         icacls.exe $keyPath /grant "$($env:USERNAME):R"
-    - name: Start SSH
+
+    # 步骤 6: 启动 SSH 反向隧道并保持会话活动
+    - name: Start SSH Reverse Tunnel and Keep Alive
       shell: powershell
       run: |
         Write-Host "Starting SSH reverse tunnel in the background..."
+        # 启动 ssh.exe 作为一个独立的后台进程
+        # -f: 后台执行
+        # -N: 不执行远程命令，仅用于端口转发
+        # -R: 反向隧道。将远程服务器的 13389 端口转发到本地的 3389 (RDP) 端口
+        # -o StrictHostKeyChecking=no: 自动接受主机密钥，避免交互
         Start-Process -FilePath "ssh.exe" -WindowStyle Hidden -ArgumentList @(
             "-i", ".ssh\id_ed25519",
             "-p", "${{ secrets.SSH_PORT }}",
@@ -73,11 +94,9 @@ jobs:
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
         )
         
-        Write-Host "Tunnel process started. Keeping the workflow alive."
-        Write-Host "You can now connect to your SSH server on port 13389 to access the RDP session."
-        Write-Host "Use username '${{ secrets.RDP_USERNAME }}' and the password from your RDP_PASSWORD secret."
-
-        $runtimeSeconds = 21300
+        Write-Host "Tunnel process started. Keeping the workflow alive for approximately 5 hours and 55 minutes."
+        # 使用一个循环来保持工作流活动，而不是 Start-Sleep，这样日志会持续有输出
+        $runtimeSeconds = 21300 # 约 5h 55m
         for ($i = 0; $i -lt $runtimeSeconds; $i += 60) {
             Write-Host "Session active. Uptime: $($i/60) minutes."
             Start-Sleep -s 60
