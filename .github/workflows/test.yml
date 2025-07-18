@@ -25,10 +25,11 @@ jobs:
         Get-WindowsCapability -Online | Where-Object { $_.Name -like 'Language.*.zh-CN*' } | Add-WindowsCapability -Online
         
         # 设置系统和用户区域
-        Write-Host "Setting system locale and user culture to zh-CN..."
-        Set-WinSystemLocale -SystemLocale zh-CN
-        Set-WinUserLanguageList -LanguageList zh-CN -Force
-        Set-Culture -CultureInfo zh-CN
+        Set-WinSystemLocale zh-CN
+        Set-WinUserLanguageList zh-CN -Force
+        Set-WinUILanguageOverride -Language zh-CN
+        Set-WinCultureFromLanguageListOptOut 0
+        Set-WinHomeLocation -GeoId 45
         
         # 验证当前会话的区域设置
         Get-Culture
