@@ -1,0 +1,29 @@
+name: Build websocat for ARMv7
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Build
+      run: |
+        docker buildx build --platform linux/arm/v7 -t websocat-armv7 --load .
+        docker create --name temp websocat-armv7
+        docker cp temp:/websocat ./websocat-armv7
+        docker rm temp
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: websocat-armv7
+        path: websocat-armv7
