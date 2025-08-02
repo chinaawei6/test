@@ -1,9 +1,9 @@
 # ==============================================================================
 # GitHub Actions Workflow to build an ULTRA-CUSTOM OpenWrt ROOTFS for LXC
-# Version: Final fix for artifact path, ensuring the correct, small rootfs is uploaded.
+# Version: The Ultimate Virtualization Build, targeting 'armvirt' for max compatibility.
 # ==============================================================================
 
-name: Build Custom OpenWrt 24.10.2 RootFS for OMAP (LXC)
+name: Build OpenWrt RootFS for ARM Virtualized Env (LXC)
 
 on:
   push:
@@ -15,9 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE_BUILDER_URL: https://archive.openwrt.org/releases/24.10.2/targets/omap/generic/openwrt-imagebuilder-24.10.2-omap-generic.Linux-x86_64.tar.zst
-      OPENWRT_TARGET: omap
-      OPENWRT_SUBTARGET: generic
+      # We will use a modern, stable version that has excellent virt support.
+      OPENWRT_VERSION: 23.05.3
+      # (KEY CHANGE) Targeting the ARM Virtualization platform.
+      OPENWRT_TARGET: armvirt
+      OPENWRT_SUBTARGET: 32
+      OPENWRT_DOWNLOAD_URL_BASE: https://downloads.openwrt.org/releases
 
     steps:
       - name: Checkout repository
@@ -28,26 +31,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential libncurses5-dev libncursesw5-dev \
-            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget \
-            zstd
+            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget
 
-      - name: Download and set up the precise OpenWrt Image Builder
+      - name: Download and set up the 'armvirt' Image Builder
         run: |
-          echo "--- Downloading exact Image Builder from: ${IMAGE_BUILDER_URL} ---"
-          wget --tries=5 --retry-connrefused "${IMAGE_BUILDER_URL}" -O imagebuilder.tar.zst
-          tar -I zstd -xvf imagebuilder.tar.zst
+          IMAGE_BUILDER_URL="${OPENWRT_DOWNLOAD_URL_BASE}/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.xz"
+          echo "--- Downloading 'armvirt' Image Builder from: ${IMAGE_BUILDER_URL} ---"
+          wget --tries=5 --retry-connrefused "${IMAGE_BUILDER_URL}" -O imagebuilder.tar.xz
+          tar -xJvf imagebuilder.tar.xz
           cd openwrt-imagebuilder-*
           make info
 
-      - name: Build custom ultra-minimal rootfs with precisely detected profile
+      - name: Build custom ultra-minimal rootfs
         run: |
           cd openwrt-imagebuilder-*
-          DETECTED_PROFILE=$(make info | awk '/Available Profiles:/ {found=1; next} found && NF {print $1; exit}' | sed 's/://')
-          if [ -z "${DETECTED_PROFILE}" ]; then
-            echo "::error::Could not detect any available profile from 'make info'!"
-            exit 1
-          fi
-          echo "--- Auto-detected profile: ${DETECTED_PROFILE} ---"
+          # 'armvirt' only has a 'generic' profile, so we can hardcode it.
+          PROFILE="generic"
           
           PACKAGES=" \
             -dropbear \
@@ -64,17 +63,20 @@ jobs:
             -urngd \
             -ucode \
           "
-          echo "--- Building firmware with packages: ${PACKAGES} ---"
+          echo "--- Building 'armvirt' firmware with packages: ${PACKAGES} ---"
           
           make image \
-            PROFILE="${DETECTED_PROFILE}" \
+            PROFILE="${PROFILE}" \
             PACKAGES="${PACKAGES}"
+          
+          echo "--- Manually creating rootfs tarball ---"
+          cd build_dir/target-*/root-*
+          tar -czf ../openwrt-rootfs-manual.tar.gz .
+          echo "--- Rootfs tarball created successfully ---"
 
       - name: Upload RootFS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-24.10.2-omap-rootfs-no-network
-          # --- (KEY FIX) Pointing to the final, compressed rootfs tarball ---
-          # This is the small, official artifact, not the large working directory.
-          path: openwrt-imagebuilder-*/bin/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-*-rootfs.tar.gz
+          name: openwrt-armvirt-rootfs-armel
+          path: openwrt-imagebuilder-*/build_dir/target-*/openwrt-rootfs-manual.tar.gz
           if-no-files-found: error
