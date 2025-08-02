@@ -1,6 +1,6 @@
 # ==============================================================================
 # Dockerfile to build a FULLY STATIC OpenSSH for OpenWrt (linux/arm/v5, armel, musl)
-# Version: The Ultimate Static Build (with toolchain path fix)
+# Version: The Ultimate Static Build (with make fix in final stage)
 # ==============================================================================
 
 # --- STAGE 1: The Musl Cross-Compiler Toolchain Builder ---
@@ -24,13 +24,10 @@ WORKDIR /build
 RUN git clone https://github.com/richfelker/musl-cross-make.git
 WORKDIR /build/musl-cross-make
 
-# (KEY FIX) Tell make to install everything into a local 'output' directory.
-# We also specify the full path for the output directory.
 ENV OUTPUT=/usr/local/musl-toolchain
 RUN echo "TARGET = arm-linux-musleabi" > config.mak && \
     echo "OUTPUT = ${OUTPUT}" >> config.mak
 
-# Download sources, build, and install into our specified OUTPUT directory.
 RUN make -j$(nproc) && make install
 
 
@@ -38,7 +35,7 @@ RUN make -j$(nproc) && make install
 # This stage uses the toolchain we just built to compile everything statically.
 FROM debian:bookworm AS final-builder
 
-# (KEY FIX) Copy the toolchain from the correct location.
+# Copy the cross-compiler toolchain from the previous stage.
 COPY --from=toolchain-builder /usr/local/musl-toolchain /usr/local/musl-toolchain
 
 # Add our new toolchain to the PATH.
@@ -59,8 +56,16 @@ ARG OPENSSL_URL=https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
 ARG OPENSSH_URL=https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${OPENSSH_VERSION}.tar.gz
 
 # --- Install base dependencies for the build host ---
+# (KEY FIX) Added 'build-essential' to this stage as well.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends wget tar ca-certificates perl autoconf automake \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        wget \
+        tar \
+        ca-certificates \
+        perl \
+        autoconf \
+        automake \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Set up Cross-Compilation Environment for STATIC linking ---
