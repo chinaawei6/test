@@ -1,0 +1,112 @@
+# ==============================================================================
+# GitHub Actions Workflow to build the LATEST STABLE OpenSSH for ARMv7
+# ==============================================================================
+
+name: Build Latest OpenSSH for ARMv7
+
+# --- Triggers ---
+# This workflow runs on any push to the main branch
+on:
+  push:
+    branches: [ "main" ]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build-armv7:
+    # Use a standard, reliable Ubuntu runner provided by GitHub
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout your repository code (even if it's just the Dockerfile)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up QEMU for multi-architecture support. This is crucial.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # 3. Set up Docker Buildx, which is the smart build engine.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 4. Build OpenSSH using the Dockerfile.
+      #    We will create the Dockerfile on-the-fly right here in the workflow.
+      #    This makes the repository self-contained.
+      - name: Build OpenSSH for ARMv7
+        run: |
+          # Define the Dockerfile content here
+          cat <<EOF > Dockerfile
+# ==============================================================================
+# Dockerfile to build the LATEST STABLE OpenSSH for linux/arm/v7
+# This runs inside a QEMU emulated environment on GitHub Actions.
+# ==============================================================================
+
+# --- STAGE 1: The Builder ---
+# We directly use the target platform image. Buildx will handle the emulation.
+FROM debian:bookworm AS builder
+
+# All dependencies are for the native architecture of the image (armhf).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        ca-certificates \
+        autoconf \
+        automake \
+        libpam0g-dev \
+        zlib1g-dev \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Source Code Preparation ---
+ARG OPENSSH_REPO_URL=https://anongit.mindrot.org/openssh.git
+ARG INSTALL_PREFIX=/usr/local/openssh-dist
+
+WORKDIR /build
+# Clone the repository to get the latest code
+RUN git clone \${OPENSSH_REPO_URL} openssh
+WORKDIR /build/openssh
+# Find the latest stable tag (e.g., V_9_7_P1) and check it out
+# This command sequence gets the latest tag that doesn't contain 'pre' or 'snap'
+RUN LATEST_TAG=\$(git tag -l 'V_*_P*' | grep -v 'pre' | grep -v 'snap' | sort -V | tail -n 1) && \
+    echo "--- Building OpenSSH version: \${LATEST_TAG} ---" && \
+    git checkout \${LATEST_TAG}
+
+# --- Build Process ---
+# This is now a standard, native build process running inside the emulated env.
+
+# 1. Generate the 'configure' script.
+RUN autoreconf -i
+
+# 2. Configure the build.
+RUN ./configure \
+    --prefix=\${INSTALL_PREFIX} \
+    --sysconfdir=\${INSTALL_PREFIX}/etc \
+    --with-pam \
+    --with-privsep-path=/var/empty/sshd
+
+# 3. Compile.
+RUN make -j\$(nproc)
+
+# 4. Install.
+RUN make install
+
+# --- Final Stage: Create the package ---
+FROM scratch
+ARG INSTALL_PREFIX=/usr/local/openssh-dist
+COPY --from=builder \${INSTALL_PREFIX} /
+EOF
+
+          # Now, execute the build command using the Dockerfile we just created
+          docker buildx build \
+            --platform linux/arm/v7 \
+            --output type=local,dest=./openssh-dist \
+            .
+
+      # 5. Upload the compiled files as a downloadable workflow artifact.
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssh-armv7-latest-stable
+          path: ./openssh-dist/
