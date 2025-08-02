@@ -1,6 +1,6 @@
-# =-============================================================================
+# ==============================================================================
 # GitHub Actions Workflow to build an ULTRA-CUSTOM OpenWrt ROOTFS for LXC
-# Version: Final fix for "Profile does not exist" error by auto-selecting one.
+# Version: Final fix for "Profile Packages does not exist" error.
 # ==============================================================================
 
 name: Build Custom OpenWrt 24.10.2 RootFS for OMAP (LXC)
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies, including zstd for decompression
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -34,19 +34,21 @@ jobs:
           echo "--- Downloading exact Image Builder from: ${IMAGE_BUILDER_URL} ---"
           wget --tries=5 --retry-connrefused "${IMAGE_BUILDER_URL}" -O imagebuilder.tar.zst
           tar -I zstd -xvf imagebuilder.tar.zst
-          
-          # Move into the directory and then run make info to be safe
           cd openwrt-imagebuilder-*
           make info
 
-      - name: Build custom ultra-minimal rootfs with auto-detected profile
+      - name: Build custom ultra-minimal rootfs with precisely detected profile
         run: |
           cd openwrt-imagebuilder-*
           
-          # --- (KEY FIX) Auto-detect the first available profile ---
-          # 'make info' lists profiles. We use awk/head to grab the first one.
-          # This avoids the "generic" profile issue.
-          DETECTED_PROFILE=$(make info | grep -oE '^\s+[a-zA-Z0-9_-]+:' | awk '{print $1}' | sed 's/://' | head -n 1)
+          # --- (KEY FIX) Precisely detect the first available profile ---
+          # This awk script finds the line "Available Profiles:", then prints the
+          # first word of the next non-empty line and removes the trailing colon.
+          DETECTED_PROFILE=$(make info | awk '
+            /Available Profiles:/ {found=1; next}
+            found && NF {print $1; exit}
+          ' | sed 's/://')
+          
           if [ -z "${DETECTED_PROFILE}" ]; then
             echo "::error::Could not detect any available profile from 'make info'!"
             exit 1
