@@ -1,60 +1,111 @@
 # ==============================================================================
-# Dockerfile to build the LATEST STABLE OpenSSH for linux/arm/v7
-# This runs inside a QEMU emulated environment on GitHub Actions.
+# Dockerfile to build a FULLY STATIC OpenSSH for OpenWrt 15.05 (linux/arm/v5, armel, musl)
+# Version: The OpenWrt Chaos Calmer Special
 # ==============================================================================
 
-# --- STAGE 1: The Builder ---
-FROM debian:bookworm AS builder
+# --- STAGE 1: The Musl Cross-Compiler Toolchain Builder ---
+# This stage builds the cross-compiler for armel-linux-musleabi
+FROM debian:bookworm AS toolchain-builder
 
-# Install all dependencies required for the build process
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
         git \
-        ca-certificates \
-        autoconf \
-        automake \
-        libpam0g-dev \
-        zlib1g-dev \
-        libssl-dev \
+        wget \
+        bzip2 \
+        unzip \
+        help2man \
+        texinfo \
+        file
+
+# Use musl-cross-make to build a cross-compiler targeting armel (soft-float)
+WORKDIR /build
+RUN git clone https://github.com/richfelker/musl-cross-make.git
+WORKDIR /build/musl-cross-make
+# Create a config file for our target
+# TARGET = arm-linux-musleabi specifies the soft-float ARM toolchain
+RUN echo "TARGET = arm-linux-musleabi" > config.mak
+# Download sources and build the toolchain
+RUN make -j$(nproc) && make install
+
+# The toolchain will be installed in /usr/local/arm-linux-musleabi
+
+
+# --- STAGE 2: The Final Builder ---
+# This stage uses the toolchain we just built to compile everything.
+FROM debian:bookworm AS final-builder
+
+# Copy the cross-compiler toolchain from the previous stage
+COPY --from=toolchain-builder /usr/local/arm-linux-musleabi /usr/local/arm-linux-musleabi
+
+# Add our new toolchain to the PATH
+ENV PATH="/usr/local/arm-linux-musleabi/bin:${PATH}"
+
+# --- Build Arguments for ARMv5 (armel) ---
+ARG TARGETTRIPLET=arm-linux-musleabi
+ARG INSTALL_PREFIX=/usr/local/openssh-static-armel
+
+# Versions for dependencies and OpenSSH
+ARG ZLIB_VERSION=1.3.1
+ARG OPENSSL_VERSION=3.0.12
+# Using a slightly older, well-tested OpenSSH version for better static linking compatibility
+ARG OPENSSH_VERSION=9.7p1
+
+# URLs for the source code
+ARG ZLIB_URL=http://www.zlib.net/zlib-${ZLIB_VERSION}.tar.gz
+ARG OPENSSL_URL=https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
+ARG OPENSSH_URL=https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${OPENSSH_VERSION}.tar.gz
+
+# --- Install base dependencies ---
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget tar ca-certificates perl autoconf automake \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Source Code Preparation ---
-# Define arguments for repository and installation path
-ARG OPENSSH_REPO_URL=https://anongit.mindrot.org/openssh.git
-ARG INSTALL_PREFIX=/usr/local/openssh-dist
+# --- Set up Cross-Compilation Environment for STATIC linking ---
+ENV CC=${TARGETTRIPLET}-gcc
+# KEY CHANGE: CFLAGS ensures everything is built for static linking and optimized for size
+ENV CFLAGS="-static -Os"
+ENV LDFLAGS="-static"
 
-# Clone the source code
-WORKDIR /build
-RUN git clone ${OPENSSH_REPO_URL} openssh
+# --- 1. Compile zlib (static) for ARMv5/musl ---
+WORKDIR /build/zlib
+RUN wget -O zlib.tar.gz ${ZLIB_URL} && tar -xzf zlib.tar.gz
+WORKDIR /build/zlib/zlib-${ZLIB_VERSION}
+RUN ./configure --prefix=${INSTALL_PREFIX} --static
+RUN make -j$(nproc) && make install
+
+# --- 2. Compile OpenSSL (static) for ARMv5/musl ---
+WORKDIR /build/openssl
+RUN wget -O openssl.tar.gz ${OPENSSL_URL} && tar -xzf openssl.tar.gz
+WORKDIR /build/openssl/openssl-${OPENSSL_VERSION}
+RUN ./Configure linux-armv4 \
+    --prefix=${INSTALL_PREFIX} \
+    --openssldir=${INSTALL_PREFIX}/ssl \
+    no-asm \
+    no-shared \
+    no-dso \
+    no-engine \
+    --with-zlib-include=${INSTALL_PREFIX}/include \
+    --with-zlib-lib=${INSTALL_PREFIX}/lib
+RUN make -j$(nproc) && make install_sw
+
+# --- 3. Compile OpenSSH (static) for ARMv5/musl ---
 WORKDIR /build/openssh
-
-# Find the latest stable tag (e.g., V_9_7_P1) and check it out
-RUN LATEST_TAG=$(git tag -l "V_*_P*" | grep -v "pre" | grep -v "snap" | sort -V | tail -n 1) && \
-    echo "--- Building OpenSSH version: ${LATEST_TAG} ---" && \
-    git checkout ${LATEST_TAG}
-
-# --- Build Process ---
-# This is a standard, native build process running inside the emulated environment.
-
-# 1. Generate the 'configure' script.
+RUN wget --no-check-certificate -O openssh.tar.gz ${OPENSSH_URL} && tar -xzf openssh.tar.gz
+WORKDIR /build/openssh/openssh-${OPENSSH_VERSION}
 RUN autoreconf -i
-
-# 2. Configure the build.
 RUN ./configure \
+    --host=${TARGETTRIPLET} \
     --prefix=${INSTALL_PREFIX} \
     --sysconfdir=${INSTALL_PREFIX}/etc \
-    --with-pam \
+    --with-zlib=${INSTALL_PREFIX} \
+    --with-ssl-dir=${INSTALL_PREFIX} \
+    --without-pam \
     --with-privsep-path=/var/empty/sshd
+RUN make -j$(nproc) && make install-nokeys
 
-# 3. Compile.
-RUN make -j$(nproc)
-
-# 4. Install.
-RUN make install
-
-# --- Final Stage: Create the package ---
-# This stage is just a container for the final compiled files.
+# --- Final Stage: The Artifact ---
+# This stage just holds the final compiled distribution.
 FROM scratch
-ARG INSTALL_PREFIX=/usr/local/openssh-dist
-COPY --from=builder ${INSTALL_PREFIX} /
+ARG INSTALL_PREFIX=/usr/local/openssh-static-armel
+COPY --from=final-builder ${INSTALL_PREFIX} /
