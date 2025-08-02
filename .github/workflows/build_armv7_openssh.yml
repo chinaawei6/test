@@ -1,92 +1,33 @@
-# ==============================================================================
-# GitHub Actions Workflow to build the LATEST STABLE OpenSSH for ARMv7
-# Version 2: Correctly formatted and escaped for YAML multi-line strings.
-# ==============================================================================
+# .github/workflows/build.yml
 
-name: Build Latest OpenSSH for ARMv7
+name: Build OpenSSH for ARMv7
 
-# --- Triggers ---
-# This workflow runs on any push to the main branch
 on:
   push:
     branches: [ "main" ]
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
   build-armv7:
-    # Use a standard, reliable Ubuntu runner provided by GitHub
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout your repository code (even if it's just this workflow file)
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up QEMU for multi-architecture support. This is crucial.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 3. Set up Docker Buildx, which is the smart build engine.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 4. Create Dockerfile and execute build
-      #    The Dockerfile content is written to a file first to avoid complex
-      #    YAML escaping issues with the 'run' block.
-      - name: Build OpenSSH for ARMv7
+      - name: Build using Dockerfile
         run: |
-          # Use 'printf' for safer multi-line string creation
-          printf '%s\n' \
-'# Dockerfile to build the LATEST STABLE OpenSSH for linux/arm/v7' \
-'# This runs inside a QEMU emulated environment on GitHub Actions.' \
-'' \
-'FROM debian:bookworm AS builder' \
-'' \
-'RUN apt-get update && \' \
-'    apt-get install -y --no-install-recommends \' \
-'        build-essential \' \
-'        git \' \
-'        ca-certificates \' \
-'        autoconf \' \
-'        automake \' \
-'        libpam0g-dev \' \
-'        zlib1g-dev \' \
-'        libssl-dev \' \
-'    && rm -rf /var/lib/apt/lists/*' \
-'' \
-'ARG OPENSSH_REPO_URL=https://anongit.mindrot.org/openssh.git' \
-'ARG INSTALL_PREFIX=/usr/local/openssh-dist' \
-'' \
-'WORKDIR /build' \
-'RUN git clone ${OPENSSH_REPO_URL} openssh' \
-'WORKDIR /build/openssh' \
-'RUN LATEST_TAG=$(git tag -l "V_*_P*" | grep -v "pre" | grep -v "snap" | sort -V | tail -n 1) && \' \
-'    echo "--- Building OpenSSH version: ${LATEST_TAG} ---" && \' \
-'    git checkout ${LATEST_TAG}' \
-'' \
-'RUN autoreconf -i' \
-'' \
-'RUN ./configure \' \
-'    --prefix=${INSTALL_PREFIX} \' \
-'    --sysconfdir=${INSTALL_PREFIX}/etc \' \
-'    --with-pam \' \
-'    --with-privsep-path=/var/empty/sshd' \
-'' \
-'RUN make -j$(nproc)' \
-'RUN make install' \
-'' \
-'FROM scratch' \
-'ARG INSTALL_PREFIX=/usr/local/openssh-dist' \
-'COPY --from=builder ${INSTALL_PREFIX} /' > Dockerfile
-
-          # Now, execute the build command using the Dockerfile we just created
           docker buildx build \
             --platform linux/arm/v7 \
             --output type=local,dest=./openssh-dist \
             .
 
-      # 5. Upload the compiled files as a downloadable workflow artifact.
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
