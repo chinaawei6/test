@@ -1,10 +1,10 @@
 # ==============================================================================
-# GitHub Actions Workflow to build a MINIMAL OpenWrt ROOTFS for LXC Containers
-# PRECISELY targeting OpenWrt 24.10.2 on the OMAP platform.
-# Target: OMAP (ARMv7, but armel ABI) with the latest OpenSSH server.
+# GitHub Actions Workflow to build an ULTRA-CUSTOM OpenWrt ROOTFS for LXC
+# PRECISELY targeting 24.10.2 on OMAP, using a .zst archive, and removing
+# the 'network' service as requested.
 # ==============================================================================
 
-name: Build Minimal OpenWrt 24.10.2 RootFS for OMAP (LXC)
+name: Build Custom OpenWrt 24.10.2 RootFS for OMAP (LXC)
 
 on:
   push:
@@ -15,48 +15,48 @@ jobs:
   build-rootfs:
     runs-on: ubuntu-latest
 
-    # --- Configuration for the specific official release version on OMAP ---
     env:
-      # (KEY CHANGE) Precisely targeting the version you specified.
+      # We keep these for artifact naming and path discovery, even with a hardcoded URL.
       OPENWRT_VERSION: 24.10.2
-      # (KEY CHANGE) Precisely targeting the OMAP platform.
       OPENWRT_TARGET: omap
       OPENWRT_SUBTARGET: generic
-      # Using the official archive URL to ensure we find this specific version.
-      OPENWRT_DOWNLOAD_URL_BASE: https://archive.openwrt.org/releases
+      
+      # (KEY CHANGE) Using the exact .zst download URL you provided.
+      IMAGE_BUILDER_URL: https://archive.openwrt.org/releases/24.10.2/targets/omap/generic/openwrt-imagebuilder-24.10.2-omap-generic.Linux-x86_64.tar.zst
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install dependencies, including zstd for decompression
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
-          zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libncurses5-dev libncursesw5-dev \
+            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget \
+            zstd # (KEY CHANGE) Tool needed to decompress .zst files
 
-      - name: Download and set up OpenWrt 24.10.2 Image Builder for OMAP
+      - name: Download and set up the precise OpenWrt Image Builder
         run: |
-          # Construct the exact Image Builder URL from the official archive for OMAP
-          IMAGE_BUILDER_URL="${OPENWRT_DOWNLOAD_URL_BASE}/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.xz"
+          echo "--- Downloading exact Image Builder from: ${IMAGE_BUILDER_URL} ---"
+          wget --tries=5 --retry-connrefused "${IMAGE_BUILDER_URL}" -O imagebuilder.tar.zst
           
-          echo "--- Downloading Image Builder from: ${IMAGE_BUILDER_URL} ---"
-          # Add --retry-connrefused to handle potential temporary mirror issues
-          wget --tries=5 --retry-connrefused ${IMAGE_BUILDER_URL} -O imagebuilder.tar.xz
-          tar -xJvf imagebuilder.tar.xz
+          # Use 'tar' with the '-I zstd' option to decompress the .zst archive
+          tar -I zstd -xvf imagebuilder.tar.zst
           
           cd openwrt-imagebuilder-*
-          # Update package lists for this specific version and target
+          # Update package lists from the repositories associated with this specific version
           make info
 
-      - name: Build custom ultra-minimal rootfs for OMAP
+      - name: Build custom ultra-minimal rootfs without network service
         run: |
           cd openwrt-imagebuilder-*
           
-          # Ultra-Minimal package list for extreme constraints (100MB storage, 500MB RAM)
+          # (KEY CHANGE) Ultra-Minimal package list, WITH 'network' service removed.
           PACKAGES=" \
             -dropbear \
             openssh-server \
+            -network \
             -ppp -ppp-mod-pppoe \
             -firewall4 -nftables \
             -odhcp6c -odhcpd-ipv6only \
@@ -69,10 +69,10 @@ jobs:
             -ucode \
           "
 
-          # Using the generic profile for the OMAP target, suitable for containers
+          # Using the generic profile for the OMAP target
           PROFILE="generic"
 
-          echo "--- Building OMAP firmware for ${OPENWRT_VERSION} with ULTRA-MINIMAL packages: ${PACKAGES} ---"
+          echo "--- Building firmware for ${OPENWRT_VERSION} with packages: ${PACKAGES} ---"
           
           make image \
             PROFILE="${PROFILE}" \
@@ -81,7 +81,7 @@ jobs:
       - name: Upload RootFS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-24.10.2-omap-rootfs-armel
+          name: openwrt-24.10.2-omap-rootfs-no-network
           # The rootfs is the direct output needed for LXC containers
           path: openwrt-imagebuilder-*/build_dir/target-*/root-*/
           if-no-files-found: error
