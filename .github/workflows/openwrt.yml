@@ -1,10 +1,10 @@
 # ==============================================================================
 # GitHub Actions Workflow to build a MINIMAL OpenWrt ROOTFS for LXC Containers
-# Optimized for low-storage/low-memory.
-# Target: ARMv5 (armel, musl) with a full OpenSSH server.
+# PRECISELY targeting OpenWrt 24.10.2 on the OMAP platform.
+# Target: OMAP (ARMv7, but armel ABI) with the latest OpenSSH server.
 # ==============================================================================
 
-name: Build Minimal OpenWrt RootFS for LXC (ARMv5)
+name: Build Minimal OpenWrt 24.10.2 RootFS for OMAP (LXC)
 
 on:
   push:
@@ -15,10 +15,15 @@ jobs:
   build-rootfs:
     runs-on: ubuntu-latest
 
+    # --- Configuration for the specific official release version on OMAP ---
     env:
-      OPENWRT_VERSION: 22.03.6
-      OPENWRT_TARGET: kirkwood
+      # (KEY CHANGE) Precisely targeting the version you specified.
+      OPENWRT_VERSION: 24.10.2
+      # (KEY CHANGE) Precisely targeting the OMAP platform.
+      OPENWRT_TARGET: omap
       OPENWRT_SUBTARGET: generic
+      # Using the official archive URL to ensure we find this specific version.
+      OPENWRT_DOWNLOAD_URL_BASE: https://archive.openwrt.org/releases
 
     steps:
       - name: Checkout repository
@@ -30,32 +35,45 @@ jobs:
           sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
           zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget
 
-      - name: Download and set up OpenWrt Image Builder
+      - name: Download and set up OpenWrt 24.10.2 Image Builder for OMAP
         run: |
-          IMAGE_BUILDER_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.xz"
-          wget ${IMAGE_BUILDER_URL} -O imagebuilder.tar.xz
+          # Construct the exact Image Builder URL from the official archive for OMAP
+          IMAGE_BUILDER_URL="${OPENWRT_DOWNLOAD_URL_BASE}/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.xz"
+          
+          echo "--- Downloading Image Builder from: ${IMAGE_BUILDER_URL} ---"
+          # Add --retry-connrefused to handle potential temporary mirror issues
+          wget --tries=5 --retry-connrefused ${IMAGE_BUILDER_URL} -O imagebuilder.tar.xz
           tar -xJvf imagebuilder.tar.xz
+          
           cd openwrt-imagebuilder-*
+          # Update package lists for this specific version and target
           make info
 
-      - name: Build custom minimal rootfs
+      - name: Build custom ultra-minimal rootfs for OMAP
         run: |
           cd openwrt-imagebuilder-*
           
-          # Minimal package list, removing dropbear and adding openssh-server
+          # Ultra-Minimal package list for extreme constraints (100MB storage, 500MB RAM)
           PACKAGES=" \
             -dropbear \
             openssh-server \
             -ppp -ppp-mod-pppoe \
             -firewall4 -nftables \
             -odhcp6c -odhcpd-ipv6only \
-            -luci* -dnsmasq \
-            -wpad-basic-wolfssl -iwinfo -logd -urngd -ucode \
+            -luci* \
+            -dnsmasq \
+            -wpad-basic-wolfssl \
+            -iwinfo \
+            -logd \
+            -urngd \
+            -ucode \
           "
 
+          # Using the generic profile for the OMAP target, suitable for containers
           PROFILE="generic"
 
-          # We are still calling 'make image', but we will only upload the rootfs tarball.
+          echo "--- Building OMAP firmware for ${OPENWRT_VERSION} with ULTRA-MINIMAL packages: ${PACKAGES} ---"
+          
           make image \
             PROFILE="${PROFILE}" \
             PACKAGES="${PACKAGES}"
@@ -63,7 +81,7 @@ jobs:
       - name: Upload RootFS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-rootfs-armel
-          # The rootfs tarball is located in this directory
+          name: openwrt-24.10.2-omap-rootfs-armel
+          # The rootfs is the direct output needed for LXC containers
           path: openwrt-imagebuilder-*/build_dir/target-*/root-*/
           if-no-files-found: error
