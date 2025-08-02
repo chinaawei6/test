@@ -1,9 +1,9 @@
 # ==============================================================================
 # GitHub Actions Workflow to build an ULTRA-CUSTOM OpenWrt ROOTFS for LXC
-# Version: The Ultimate HiSilicon A9 Build.
+# Version: The Ultimate HiSilicon A9 Build, using the correct 21.02 LTS release.
 # ==============================================================================
 
-name: Build OpenWrt RootFS for HiSilicon A9 (LXC)
+name: Build OpenWrt 21.02 RootFS for HiSilicon A9 (LXC)
 
 on:
   push:
@@ -15,11 +15,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # We use a modern, stable version that has support for the hisilicon target.
-      OPENWRT_VERSION: 23.05.3
-      # (KEY CHANGE) Precisely targeting the HiSilicon platform.
+      # (KEY CHANGE) Using the last LTS version that officially supports 'hisilicon'.
+      OPENWRT_VERSION: 21.02.7
       OPENWRT_TARGET: hisilicon
-      # HiSilicon target has a 'generic' subtarget.
       OPENWRT_SUBTARGET: generic
       OPENWRT_DOWNLOAD_URL_BASE: https://downloads.openwrt.org/releases
 
@@ -34,7 +32,7 @@ jobs:
             build-essential libncurses5-dev libncursesw5-dev \
             zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget
 
-      - name: Download and set up the 'hisilicon' Image Builder
+      - name: Download and set up the 'hisilicon' Image Builder for 21.02.7
         run: |
           IMAGE_BUILDER_URL="${OPENWRT_DOWNLOAD_URL_BASE}/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.xz"
           echo "--- Downloading 'hisilicon' Image Builder from: ${IMAGE_BUILDER_URL} ---"
@@ -46,8 +44,7 @@ jobs:
       - name: Build custom ultra-minimal rootfs
         run: |
           cd openwrt-imagebuilder-*
-          # 'hisilicon' target has multiple profiles, so we auto-detect the first one,
-          # which is usually the most generic one.
+          # 'hisilicon' target has multiple profiles, so we auto-detect the first one.
           DETECTED_PROFILE=$(make info | awk '/Available Profiles:/ {found=1; next} found && NF {print $1; exit}' | sed 's/://')
           if [ -z "${DETECTED_PROFILE}" ]; then
             echo "::error::Could not detect any available profile from 'make info' for hisilicon target!"
@@ -55,12 +52,13 @@ jobs:
           fi
           echo "--- Auto-detected profile: ${DETECTED_PROFILE} ---"
           
+          # We use firewall (the older version) instead of firewall4 for 21.02
           PACKAGES=" \
             -dropbear \
             openssh-server \
             -network \
             -ppp -ppp-mod-pppoe \
-            -firewall4 -nftables \
+            -firewall \
             -odhcp6c -odhcpd-ipv6only \
             -luci* \
             -dnsmasq \
@@ -68,9 +66,8 @@ jobs:
             -iwinfo \
             -logd \
             -urngd \
-            -ucode \
           "
-          echo "--- Building 'hisilicon' firmware with packages: ${PACKAGES} ---"
+          echo "--- Building 'hisilicon' 21.02 firmware with packages: ${PACKAGES} ---"
           
           make image \
             PROFILE="${DETECTED_PROFILE}" \
@@ -84,6 +81,6 @@ jobs:
       - name: Upload RootFS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-hisilicon-rootfs-armel
+          name: openwrt-21.02-hisilicon-rootfs-armel
           path: openwrt-imagebuilder-*/build_dir/target-*/openwrt-rootfs-manual.tar.gz
           if-no-files-found: error
