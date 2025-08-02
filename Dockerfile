@@ -1,12 +1,13 @@
 # ==============================================================================
 # Dockerfile to build a FULLY STATIC OpenSSH for OpenWrt (linux/arm/v5, armel, musl)
-# Version: The Ultimate Static Build for Embedded Systems
+# Version: The Ultimate Static Build for Embedded Systems (with cert fix)
 # ==============================================================================
 
 # --- STAGE 1: The Musl Cross-Compiler Toolchain Builder ---
 # This stage builds the cross-compiler for arm-linux-musleabi.
 FROM debian:bookworm AS toolchain-builder
 
+# (KEY FIX) Install base dependencies including ca-certificates for git.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
@@ -16,14 +17,15 @@ RUN apt-get update && \
         unzip \
         help2man \
         texinfo \
-        file
+        file \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Use musl-cross-make to build a cross-compiler targeting armel (soft-float).
 WORKDIR /build
 RUN git clone https://github.com/richfelker/musl-cross-make.git
 WORKDIR /build/musl-cross-make
 # Create a config file for our target.
-# TARGET = arm-linux-musleabi specifies the soft-float ARM toolchain with musl libc.
 RUN echo "TARGET = arm-linux-musleabi" > config.mak
 # Download sources and build the toolchain.
 RUN make -j$(nproc) && make install
@@ -48,7 +50,7 @@ ARG INSTALL_PREFIX=/usr/local/openssh-static-armel
 # Versions for dependencies and OpenSSH
 ARG ZLIB_VERSION=1.3.1
 ARG OPENSSL_VERSION=3.0.12
-ARG OPENSSH_VERSION=9.7p1 # Using a well-tested version for static linking compatibility
+ARG OPENSSH_VERSION=9.7p1
 
 # URLs for the source code
 ARG ZLIB_URL=http://www.zlib.net/zlib-${ZLIB_VERSION}.tar.gz
@@ -62,7 +64,6 @@ RUN apt-get update && \
 
 # --- Set up Cross-Compilation Environment for STATIC linking ---
 ENV CC=${TARGETTRIPLET}-gcc
-# KEY: CFLAGS ensures everything is built for static linking and optimized for size.
 ENV CFLAGS="-static -Os"
 ENV LDFLAGS="-static"
 ENV PKG_CONFIG_PATH=${INSTALL_PREFIX}/lib/pkgconfig
@@ -78,7 +79,6 @@ RUN make -j$(nproc) && make install
 WORKDIR /build/openssl
 RUN wget -O openssl.tar.gz ${OPENSSL_URL} && tar -xzf openssl.tar.gz
 WORKDIR /build/openssl/openssl-${OPENSSL_VERSION}
-# Use 'no-shared' and other flags to ensure a fully static library.
 RUN ./Configure linux-armv4 \
     --prefix=${INSTALL_PREFIX} \
     --openssldir=${INSTALL_PREFIX}/ssl \
@@ -95,7 +95,6 @@ WORKDIR /build/openssh
 RUN wget --no-check-certificate -O openssh.tar.gz ${OPENSSH_URL} && tar -xzf openssh.tar.gz
 WORKDIR /build/openssh/openssh-${OPENSSH_VERSION}
 RUN autoreconf -i
-# LDFLAGS="-all-static" is another way to enforce static linking for OpenSSH.
 RUN LDFLAGS="-all-static" ./configure \
     --host=${TARGETTRIPLET} \
     --prefix=${INSTALL_PREFIX} \
@@ -105,7 +104,6 @@ RUN LDFLAGS="-all-static" ./configure \
     --without-pam \
     --with-privsep-path=/var/empty/sshd
 RUN make -j$(nproc)
-# Use install-nokeys to prevent running armv5 ssh-keygen on the x86_64 host.
 RUN make install-nokeys
 
 
