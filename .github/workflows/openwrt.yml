@@ -1,0 +1,69 @@
+# ==============================================================================
+# GitHub Actions Workflow to build a MINIMAL OpenWrt ROOTFS for LXC Containers
+# Optimized for low-storage/low-memory.
+# Target: ARMv5 (armel, musl) with a full OpenSSH server.
+# ==============================================================================
+
+name: Build Minimal OpenWrt RootFS for LXC (ARMv5)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-rootfs:
+    runs-on: ubuntu-latest
+
+    env:
+      OPENWRT_VERSION: 22.03.6
+      OPENWRT_TARGET: kirkwood
+      OPENWRT_SUBTARGET: generic
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
+          zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget
+
+      - name: Download and set up OpenWrt Image Builder
+        run: |
+          IMAGE_BUILDER_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.xz"
+          wget ${IMAGE_BUILDER_URL} -O imagebuilder.tar.xz
+          tar -xJvf imagebuilder.tar.xz
+          cd openwrt-imagebuilder-*
+          make info
+
+      - name: Build custom minimal rootfs
+        run: |
+          cd openwrt-imagebuilder-*
+          
+          # Minimal package list, removing dropbear and adding openssh-server
+          PACKAGES=" \
+            -dropbear \
+            openssh-server \
+            -ppp -ppp-mod-pppoe \
+            -firewall4 -nftables \
+            -odhcp6c -odhcpd-ipv6only \
+            -luci* -dnsmasq \
+            -wpad-basic-wolfssl -iwinfo -logd -urngd -ucode \
+          "
+
+          PROFILE="generic"
+
+          # We are still calling 'make image', but we will only upload the rootfs tarball.
+          make image \
+            PROFILE="${PROFILE}" \
+            PACKAGES="${PACKAGES}"
+
+      - name: Upload RootFS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-rootfs-armel
+          # The rootfs tarball is located in this directory
+          path: openwrt-imagebuilder-*/build_dir/target-*/root-*/
+          if-no-files-found: error
