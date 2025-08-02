@@ -1,6 +1,6 @@
 # ==============================================================================
 # GitHub Actions Workflow to build an ULTRA-CUSTOM OpenWrt ROOTFS for LXC
-# Version: Final fix for "Profile Packages does not exist" error.
+# Version: Final fix for artifact path, ensuring the correct, small rootfs is uploaded.
 # ==============================================================================
 
 name: Build Custom OpenWrt 24.10.2 RootFS for OMAP (LXC)
@@ -16,6 +16,8 @@ jobs:
 
     env:
       IMAGE_BUILDER_URL: https://archive.openwrt.org/releases/24.10.2/targets/omap/generic/openwrt-imagebuilder-24.10.2-omap-generic.Linux-x86_64.tar.zst
+      OPENWRT_TARGET: omap
+      OPENWRT_SUBTARGET: generic
 
     steps:
       - name: Checkout repository
@@ -40,22 +42,13 @@ jobs:
       - name: Build custom ultra-minimal rootfs with precisely detected profile
         run: |
           cd openwrt-imagebuilder-*
-          
-          # --- (KEY FIX) Precisely detect the first available profile ---
-          # This awk script finds the line "Available Profiles:", then prints the
-          # first word of the next non-empty line and removes the trailing colon.
-          DETECTED_PROFILE=$(make info | awk '
-            /Available Profiles:/ {found=1; next}
-            found && NF {print $1; exit}
-          ' | sed 's/://')
-          
+          DETECTED_PROFILE=$(make info | awk '/Available Profiles:/ {found=1; next} found && NF {print $1; exit}' | sed 's/://')
           if [ -z "${DETECTED_PROFILE}" ]; then
             echo "::error::Could not detect any available profile from 'make info'!"
             exit 1
           fi
           echo "--- Auto-detected profile: ${DETECTED_PROFILE} ---"
           
-          # Ultra-Minimal package list, WITH 'network' service removed.
           PACKAGES=" \
             -dropbear \
             openssh-server \
@@ -71,7 +64,6 @@ jobs:
             -urngd \
             -ucode \
           "
-
           echo "--- Building firmware with packages: ${PACKAGES} ---"
           
           make image \
@@ -82,5 +74,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-24.10.2-omap-rootfs-no-network
-          path: openwrt-imagebuilder-*/build_dir/target-*/root-*/
+          # --- (KEY FIX) Pointing to the final, compressed rootfs tarball ---
+          # This is the small, official artifact, not the large working directory.
+          path: openwrt-imagebuilder-*/bin/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-*-rootfs.tar.gz
           if-no-files-found: error
