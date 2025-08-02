@@ -1,9 +1,9 @@
 # ==============================================================================
 # GitHub Actions Workflow to build an ULTRA-CUSTOM OpenWrt ROOTFS for LXC
-# Version: The Ultimate Virtualization Build, targeting 'armvirt' for max compatibility.
+# Version: The Ultimate HiSilicon A9 Build.
 # ==============================================================================
 
-name: Build OpenWrt RootFS for ARM Virtualized Env (LXC)
+name: Build OpenWrt RootFS for HiSilicon A9 (LXC)
 
 on:
   push:
@@ -15,11 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # We will use a modern, stable version that has excellent virt support.
+      # We use a modern, stable version that has support for the hisilicon target.
       OPENWRT_VERSION: 23.05.3
-      # (KEY CHANGE) Targeting the ARM Virtualization platform.
-      OPENWRT_TARGET: armvirt
-      OPENWRT_SUBTARGET: 32
+      # (KEY CHANGE) Precisely targeting the HiSilicon platform.
+      OPENWRT_TARGET: hisilicon
+      # HiSilicon target has a 'generic' subtarget.
+      OPENWRT_SUBTARGET: generic
       OPENWRT_DOWNLOAD_URL_BASE: https://downloads.openwrt.org/releases
 
     steps:
@@ -33,10 +34,10 @@ jobs:
             build-essential libncurses5-dev libncursesw5-dev \
             zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget
 
-      - name: Download and set up the 'armvirt' Image Builder
+      - name: Download and set up the 'hisilicon' Image Builder
         run: |
           IMAGE_BUILDER_URL="${OPENWRT_DOWNLOAD_URL_BASE}/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.xz"
-          echo "--- Downloading 'armvirt' Image Builder from: ${IMAGE_BUILDER_URL} ---"
+          echo "--- Downloading 'hisilicon' Image Builder from: ${IMAGE_BUILDER_URL} ---"
           wget --tries=5 --retry-connrefused "${IMAGE_BUILDER_URL}" -O imagebuilder.tar.xz
           tar -xJvf imagebuilder.tar.xz
           cd openwrt-imagebuilder-*
@@ -45,8 +46,14 @@ jobs:
       - name: Build custom ultra-minimal rootfs
         run: |
           cd openwrt-imagebuilder-*
-          # 'armvirt' only has a 'generic' profile, so we can hardcode it.
-          PROFILE="generic"
+          # 'hisilicon' target has multiple profiles, so we auto-detect the first one,
+          # which is usually the most generic one.
+          DETECTED_PROFILE=$(make info | awk '/Available Profiles:/ {found=1; next} found && NF {print $1; exit}' | sed 's/://')
+          if [ -z "${DETECTED_PROFILE}" ]; then
+            echo "::error::Could not detect any available profile from 'make info' for hisilicon target!"
+            exit 1
+          fi
+          echo "--- Auto-detected profile: ${DETECTED_PROFILE} ---"
           
           PACKAGES=" \
             -dropbear \
@@ -63,10 +70,10 @@ jobs:
             -urngd \
             -ucode \
           "
-          echo "--- Building 'armvirt' firmware with packages: ${PACKAGES} ---"
+          echo "--- Building 'hisilicon' firmware with packages: ${PACKAGES} ---"
           
           make image \
-            PROFILE="${PROFILE}" \
+            PROFILE="${DETECTED_PROFILE}" \
             PACKAGES="${PACKAGES}"
           
           echo "--- Manually creating rootfs tarball ---"
@@ -77,6 +84,6 @@ jobs:
       - name: Upload RootFS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-armvirt-rootfs-armel
+          name: openwrt-hisilicon-rootfs-armel
           path: openwrt-imagebuilder-*/build_dir/target-*/openwrt-rootfs-manual.tar.gz
           if-no-files-found: error
