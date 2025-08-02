@@ -1,13 +1,12 @@
 # ==============================================================================
 # Dockerfile to build a FULLY STATIC OpenSSH for OpenWrt (linux/arm/v5, armel, musl)
-# Version: The Ultimate Static Build for Embedded Systems (with cert fix)
+# Version: The Ultimate Static Build (with toolchain path fix)
 # ==============================================================================
 
 # --- STAGE 1: The Musl Cross-Compiler Toolchain Builder ---
 # This stage builds the cross-compiler for arm-linux-musleabi.
 FROM debian:bookworm AS toolchain-builder
 
-# (KEY FIX) Install base dependencies including ca-certificates for git.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
@@ -21,27 +20,29 @@ RUN apt-get update && \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Use musl-cross-make to build a cross-compiler targeting armel (soft-float).
 WORKDIR /build
 RUN git clone https://github.com/richfelker/musl-cross-make.git
 WORKDIR /build/musl-cross-make
-# Create a config file for our target.
-RUN echo "TARGET = arm-linux-musleabi" > config.mak
-# Download sources and build the toolchain.
-RUN make -j$(nproc) && make install
 
-# The toolchain will be installed in /usr/local/arm-linux-musleabi.
+# (KEY FIX) Tell make to install everything into a local 'output' directory.
+# We also specify the full path for the output directory.
+ENV OUTPUT=/usr/local/musl-toolchain
+RUN echo "TARGET = arm-linux-musleabi" > config.mak && \
+    echo "OUTPUT = ${OUTPUT}" >> config.mak
+
+# Download sources, build, and install into our specified OUTPUT directory.
+RUN make -j$(nproc) && make install
 
 
 # --- STAGE 2: The Final Builder ---
 # This stage uses the toolchain we just built to compile everything statically.
 FROM debian:bookworm AS final-builder
 
-# Copy the cross-compiler toolchain from the previous stage.
-COPY --from=toolchain-builder /usr/local/arm-linux-musleabi /usr/local/arm-linux-musleabi
+# (KEY FIX) Copy the toolchain from the correct location.
+COPY --from=toolchain-builder /usr/local/musl-toolchain /usr/local/musl-toolchain
 
 # Add our new toolchain to the PATH.
-ENV PATH="/usr/local/arm-linux-musleabi/bin:${PATH}"
+ENV PATH="/usr/local/musl-toolchain/bin:${PATH}"
 
 # --- Build Arguments ---
 ARG TARGETTRIPLET=arm-linux-musleabi
