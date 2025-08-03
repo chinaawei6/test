@@ -1,6 +1,6 @@
 # ==============================================================================
 # GitHub Actions Workflow to build a STATIC OpenSSH package for OpenWrt
-# using the source compilation Dockerfile.
+# Version: Final fix for 'docker create: no command specified' error.
 # ==============================================================================
 
 name: Build Static OpenSSH Package for OpenWrt (ARMv5)
@@ -35,8 +35,9 @@ jobs:
       - name: Extract final tarball from the image
         run: |
           mkdir -p ./openssh-dist
-          # Create a temporary container from the final image
-          id=$(docker create openssh-static-package)
+          # (KEY FIX) Add a dummy command ('sh') to the 'docker create' call.
+          # This is required for images based on 'scratch' that have no default CMD.
+          id=$(docker create openssh-static-package sh)
           # Copy the single tar.gz file from the container's root
           docker cp "$id:/openssh-static-armel.tar.gz" ./openssh-dist/
           # Clean up the container
