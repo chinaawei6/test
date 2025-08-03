@@ -1,12 +1,12 @@
 # ==============================================================================
 # Dockerfile to build a FULLY STATIC OpenSSH for OpenWrt (using glibc toolchain)
-# Version: The Ultimate Static Build (glibc version for max compatibility)
+# Version: The Ultimate Static Build (Manual Install)
 # ==============================================================================
 
-# We only need a single stage now, as we don't build a toolchain anymore.
+# We only need a single stage now.
 FROM debian:bookworm AS builder
 
-# --- Build Arguments for ARMv5 (armel, glibc) ---
+# --- Build Arguments for ARMv-el, glibc) ---
 ARG TARGETTRIPLET=arm-linux-gnueabi
 ARG INSTALL_PREFIX=/usr/local/openssh-static-armel
 
@@ -38,10 +38,8 @@ RUN apt-get update && \
 
 # --- Set up Cross-Compilation Environment for STATIC linking ---
 ENV CC=${TARGETTRIPLET}-gcc
-# KEY: We use -static to tell the linker to not use shared libraries.
 ENV CFLAGS="-static -Os"
 ENV LDFLAGS="-static"
-# Add the cross-compiler's library path for pkg-config
 ENV PKG_CONFIG_PATH=/usr/${TARGETTRIPLET}/lib/pkgconfig
 
 # --- 1. Compile zlib (static) ---
@@ -58,10 +56,7 @@ WORKDIR /build/openssl/openssl-${OPENSSL_VERSION}
 RUN ./Configure linux-armv4 \
     --prefix=/usr/${TARGETTRIPLET} \
     --openssldir=/etc/ssl \
-    no-asm \
-    no-shared \
-    no-dso \
-    no-engine
+    no-asm no-shared no-dso no-engine
 RUN make -j$(nproc) && make install_sw
 
 # --- 3. Compile OpenSSH (static) ---
@@ -71,14 +66,28 @@ WORKDIR /build/openssh/openssh-${OPENSSH_VERSION}
 RUN autoreconf -i
 RUN ./configure \
     --host=${TARGETTRIPLET} \
-    --prefix=${INSTALL_PREFIX} \
-    --sysconfdir=${INSTALL_PREFIX}/etc \
     --with-zlib=/usr/${TARGETTRIPLET} \
     --with-ssl-dir=/usr/${TARGETTRIPLET} \
-    --without-pam \
-    --with-privsep-path=/var/empty/sshd
+    --without-pam
+# (KEY CHANGE) We only run 'make', not 'make install'.
 RUN make -j$(nproc)
-RUN make install-nokeys
+
+# --- 4. (KEY CHANGE) Manually "install" the required files ---
+# Create a clean directory for our final package
+RUN mkdir -p ${INSTALL_PREFIX}/bin ${INSTALL_PREFIX}/sbin ${INSTALL_PREFIX}/etc ${INSTALL_PREFIX}/libexec
+# Copy the server binary
+RUN cp sshd ${INSTALL_PREFIX}/sbin/
+# Copy the client binaries
+RUN cp ssh scp ssh-add ssh-agent ssh-keyscan ${INSTALL_PREFIX}/bin/
+# Copy the sftp-server, which is needed by the server
+RUN cp sftp-server ${INSTALL_PREFIX}/libexec/
+# Copy the default config files
+RUN cp sshd_config ${INSTALL_PREFIX}/etc/
+RUN cp ssh_config ${INSTALL_PREFIX}/etc/
+# (Optional) Use the arm cross-compiler's strip to reduce size
+RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/sbin/sshd
+RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/bin/*
+RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/libexec/*
 
 # --- Final Stage: The Artifact ---
 FROM scratch
