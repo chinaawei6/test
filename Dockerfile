@@ -1,12 +1,11 @@
 # ==============================================================================
 # Dockerfile to build a FULLY STATIC OpenSSH for OpenWrt (using glibc toolchain)
-# Version: The Ultimate Static Build (Manual Install)
+# Version: The Ultimate Static Build (produces a single tarball)
 # ==============================================================================
 
-# We only need a single stage now.
 FROM debian:bookworm AS builder
 
-# --- Build Arguments for ARMv-el, glibc) ---
+# --- Build Arguments for ARMv5 (armel, glibc) ---
 ARG TARGETTRIPLET=arm-linux-gnueabi
 ARG INSTALL_PREFIX=/usr/local/openssh-static-armel
 
@@ -69,27 +68,78 @@ RUN ./configure \
     --with-zlib=/usr/${TARGETTRIPLET} \
     --with-ssl-dir=/usr/${TARGETTRIPLET} \
     --without-pam
-# (KEY CHANGE) We only run 'make', not 'make install'.
 RUN make -j$(nproc)
 
-# --- 4. (KEY CHANGE) Manually "install" the required files ---
-# Create a clean directory for our final package
+# --- 4. Manually "install" and package the required files ---
 RUN mkdir -p ${INSTALL_PREFIX}/bin ${INSTALL_PREFIX}/sbin ${INSTALL_PREFIX}/etc ${INSTALL_PREFIX}/libexec
-# Copy the server binary
 RUN cp sshd ${INSTALL_PREFIX}/sbin/
-# Copy the client binaries
 RUN cp ssh scp ssh-add ssh-agent ssh-keyscan ${INSTALL_PREFIX}/bin/
-# Copy the sftp-server, which is needed by the server
 RUN cp sftp-server ${INSTALL_PREFIX}/libexec/
-# Copy the default config files
 RUN cp sshd_config ${INSTALL_PREFIX}/etc/
 RUN cp ssh_config ${INSTALL_PREFIX}/etc/
-# (Optional) Use the arm cross-compiler's strip to reduce size
 RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/sbin/sshd
 RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/bin/*
 RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/libexec/*
+# (KEY CHANGE) Create a final tarball
+WORKDIR ${INSTALL_PREFIX}
+RUN tar -czf /openssh-static-armel.tar.gz .
+
 
 # --- Final Stage: The Artifact ---
+# This stage contains ONLY the final compressed package.
 FROM scratch
-ARG INSTALL_PREFIX=/usr/local/openssh-static-armel
-COPY --from=builder ${INSTALL_PREFIX} /
+COPY --from=builder /openssh-static-armel.tar.gz /```
+
+### **最终的、修正后的 GitHub Actions Workflow**
+
+```yaml
+# ==============================================================================
+# GitHub Actions Workflow to build a STATIC OpenSSH package for OpenWrt
+# Version: Final fix for artifact extraction.
+# ==============================================================================
+
+name: Build Static OpenSSH Package for OpenWrt (ARMv5)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-static-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the static OpenSSH package using Dockerfile
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -t openssh-static-package \
+            --output type=docker \
+            .
+
+      # (KEY FIX) A much simpler and more reliable extraction method.
+      - name: Extract final tarball from the image
+        run: |
+          mkdir -p ./openssh-dist
+          # Create a temporary container from the final image
+          id=$(docker create openssh-static-package)
+          # Copy the single tar.gz file from the container's root
+          docker cp "$id:/openssh-static-armel.tar.gz" ./openssh-dist/
+          # Clean up the container
+          docker rm -v "$id"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssh-static-armel-package
+          path: ./openssh-dist/
