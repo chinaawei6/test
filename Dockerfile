@@ -1,5 +1,5 @@
 # ==============================================================================
-# Dockerfile to build a FULLY STATIC OpenSSH for OpenWrt (using glibc toolchain)
+# Dockerfile to build a FULLY STATIC OpenSSH package for OpenWrt (using glibc)
 # Version: The Ultimate Static Build (produces a single tarball)
 # ==============================================================================
 
@@ -80,66 +80,10 @@ RUN cp ssh_config ${INSTALL_PREFIX}/etc/
 RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/sbin/sshd
 RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/bin/*
 RUN ${TARGETTRIPLET}-strip ${INSTALL_PREFIX}/libexec/*
-# (KEY CHANGE) Create a final tarball
 WORKDIR ${INSTALL_PREFIX}
 RUN tar -czf /openssh-static-armel.tar.gz .
-
 
 # --- Final Stage: The Artifact ---
 # This stage contains ONLY the final compressed package.
 FROM scratch
-COPY --from=builder /openssh-static-armel.tar.gz /```
-
-### **最终的、修正后的 GitHub Actions Workflow**
-
-```yaml
-# ==============================================================================
-# GitHub Actions Workflow to build a STATIC OpenSSH package for OpenWrt
-# Version: Final fix for artifact extraction.
-# ==============================================================================
-
-name: Build Static OpenSSH Package for OpenWrt (ARMv5)
-
-on:
-  push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
-
-jobs:
-  build-static-package:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build the static OpenSSH package using Dockerfile
-        run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -t openssh-static-package \
-            --output type=docker \
-            .
-
-      # (KEY FIX) A much simpler and more reliable extraction method.
-      - name: Extract final tarball from the image
-        run: |
-          mkdir -p ./openssh-dist
-          # Create a temporary container from the final image
-          id=$(docker create openssh-static-package)
-          # Copy the single tar.gz file from the container's root
-          docker cp "$id:/openssh-static-armel.tar.gz" ./openssh-dist/
-          # Clean up the container
-          docker rm -v "$id"
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: openssh-static-armel-package
-          path: ./openssh-dist/
+COPY --from=builder /openssh-static-armel.tar.gz /
