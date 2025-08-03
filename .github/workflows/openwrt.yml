@@ -18,26 +18,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU (Good practice, though not strictly needed for this Dockerfile)
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build the static OpenSSH package using Dockerfile
-        # This will create a docker image that contains the final compiled files
         run: |
           docker buildx build \
             --platform linux/amd64 \
-            -t openssh-static-builder \
+            -t openssh-static-package \
             --output type=docker \
             .
 
-      - name: Extract compiled files from the image
+      - name: Extract final tarball from the image
         run: |
           mkdir -p ./openssh-dist
-          docker run --rm --entrypoint "" openssh-static-builder tar -czC / . | tar -xzC ./openssh-dist
-          
+          # Create a temporary container from the final image
+          id=$(docker create openssh-static-package)
+          # Copy the single tar.gz file from the container's root
+          docker cp "$id:/openssh-static-armel.tar.gz" ./openssh-dist/
+          # Clean up the container
+          docker rm -v "$id"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
