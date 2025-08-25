@@ -94,7 +94,7 @@ jobs:
             "-p", "${{ secrets.SSH_PORT }}",
             "-fNR", "13389:localhost:3389",
             "-o", "StrictHostKeyChecking=no",
-            "-o", "ServerAliveinterval=60",
+            "-o", "ServerAliveInterval=60",
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
         )
         
