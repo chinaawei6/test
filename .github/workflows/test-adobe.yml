@@ -1,4 +1,4 @@
-name: test-adobe
+name: test-ps2025
 
 on:
   workflow_dispatch:
@@ -31,7 +31,6 @@ jobs:
         Set-Culture -CultureInfo zh-CN
         
         # 下载安装包
-        Invoke-WebRequest -Uri "https://drive.usercontent.google.com/download?id=1_oHzfb7H4OZLevQlxBZl8wb9A-akpL_1&export=download&confirm=t&uuid=27388236-37d9-48ac-b1f8-284e84074d1a" -OutFile "pr2025.iso"
         Invoke-WebRequest -Uri "https://drive.usercontent.google.com/download?id=1kuH7io_EmZHE_DS-Ree0yg5RmjtYCF1O&export=download&authuser=0&confirm=t&uuid=7b32bc1f-b0d2-446a-858f-2756fc322fe2" -OutFile "ps2025.iso"
 
     # 步骤 3: 启用远程桌面 (RDP) 并配置防火墙
