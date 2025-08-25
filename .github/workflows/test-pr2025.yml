@@ -31,7 +31,8 @@ jobs:
         Set-Culture -CultureInfo zh-CN
         
         # 下载安装包
-        Invoke-WebRequest -Uri "https://drive.usercontent.google.com/download?id=1_oHzfb7H4OZLevQlxBZl8wb9A-akpL_1&export=download&confirm=t&uuid=27388236-37d9-48ac-b1f8-284e84074d1a" -OutFile "pr2025.iso"
+    - name: download
+      run: curl -L -o pr2025.iso "https://drive.usercontent.google.com/download?id=1_oHzfb7H4OZLevQlxBZl8wb9A-akpL_1&export=download&confirm=t&uuid=27388236-37d9-48ac-b1f8-284e84074d1a"
 
     # 步骤 3: 启用远程桌面 (RDP) 并配置防火墙
     - name: Enable Remote Desktop
