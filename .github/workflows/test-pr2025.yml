@@ -32,7 +32,7 @@ jobs:
         
         # 下载安装包
     - name: download
-      run: curl -L -o pr2025.iso "https://drive.usercontent.google.com/download?id=1_oHzfb7H4OZLevQlxBZl8wb9A-akpL_1&export=download&confirm=t&uuid=27388236-37d9-48ac-b1f8-284e84074d1a&at=AN8xHoo27hdExqwXoiUGG6pmE8KE%3A1756121209046"
+      run: curl -L -o pr2025.iso "https://drive.usercontent.google.com/download?id=1_oHzfb7H4OZLevQlxBZl8wb9A-akpL_1&export=download&confirm=t&uuid=27388236-37d9-48ac-b1f8-284e84074d1a"
     - name: mount iso
       shell: powershell
       run: Mount-DiskImage -ImagePath "D:\a\test\test\pr2025.iso"
