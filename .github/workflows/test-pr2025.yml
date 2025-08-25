@@ -1,4 +1,4 @@
-name: test-ps2025
+name: test-pr2025
 
 on:
   workflow_dispatch:
