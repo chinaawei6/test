@@ -20,18 +20,28 @@ jobs:
     - name: Install Full Chinese (zh-CN) Language Pack
       shell: powershell
       run: |
-        # 这个方法更健壮，会自动安装所有相关的中文组件（基础、手写、OCR等）
-        Write-Host "Installing full Chinese language pack components..."
-        Get-WindowsCapability -Online | Where-Object { $_.Name -like 'Language.*.zh-CN*' } | Add-WindowsCapability -Online
-        
-        # 设置系统和用户区域
-        Write-Host "Setting system locale and user culture to zh-CN..."
-        Set-WinSystemLocale -SystemLocale zh-CN
-        Set-WinUserLanguageList -LanguageList zh-CN -Force
-        Set-Culture -CultureInfo zh-CN
-        
-        # 验证当前会话的区域设置
-        Get-Culture
+          Write-Host "Installing full Chinese language pack components..."
+
+          # 安装所有 zh-CN 相关的语言能力（基础、手写、OCR、语音等）
+          Get-WindowsCapability -Online |
+            Where-Object { $_.Name -like 'Language.*.zh-CN*' -and $_.State -eq 'NotPresent' } |
+            ForEach-Object { Add-WindowsCapability -Online -Name $_.Name }
+
+          # 安装显示语言包（这是关键，否则只能选输入法，不能选显示语言）
+          Get-WindowsCapability -Online |
+            Where-Object { $_.Name -like 'Language.Basic~~~zh-CN*' -and $_.State -eq 'NotPresent' } |
+            ForEach-Object { Add-WindowsCapability -Online -Name $_.Name }
+
+          # 设置系统和用户区域
+          Write-Host "Setting system locale and user culture to zh-CN..."
+          Set-WinSystemLocale -SystemLocale zh-CN
+          Set-WinUILanguageOverride -Language zh-CN
+          Set-WinUserLanguageList -LanguageList zh-CN -Force
+          Set-Culture -CultureInfo zh-CN
+
+          # 验证当前会话的区域设置
+          Get-Culture
+
 
     # 步骤 3: 启用远程桌面 (RDP) 并配置防火墙
     - name: Enable Remote Desktop
